@@ -35,7 +35,10 @@ export async function notifyManny(booking: Booking, kind: NotifyKind): Promise<v
       hour: "numeric",
       minute: "2-digit",
     });
-    const body = `New job: ${booking.serviceName} for ${booking.customer.name.split(" ")[0]} on ${when}, ${booking.address.borough}. Tap to review: ${link}`;
+    const serviceLabel = booking.items?.length > 1
+      ? booking.items.map((i) => i.serviceName).join(" + ")
+      : booking.serviceName;
+    const body = `New job: ${serviceLabel} for ${booking.customer.name.split(" ")[0]} on ${when}, ${booking.address.borough}. Tap to review: ${link}`;
     // eslint-disable-next-line no-console
     console.log(`[notify:stub] -> manny SMS | "${body}"`);
     return;

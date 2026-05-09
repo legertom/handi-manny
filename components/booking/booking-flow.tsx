@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input, Textarea } from "@/components/ui/input";
 import { IntakeStep } from "./intake-step";
-import { ServiceRibbon } from "./service-ribbon";
 import { BookingSummary } from "./booking-summary";
 import { PhotoGallery } from "@/components/photo-gallery";
 import { cn, formatPriceFromDollars } from "@/lib/utils";
@@ -30,6 +29,8 @@ import {
   MapPin,
   Mail,
   Phone,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import type { DayAvailability, Slot } from "@/lib/availability";
 
@@ -40,12 +41,17 @@ type ContactChannel = "sms" | "email";
 
 const BOROUGHS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"] as const;
 
-type Form = {
-  serviceId: string | null;
+export type CartItem = {
+  serviceId: string;
   intakeAnswers: IntakeAnswers;
   selectedAddonIds: string[];
   taskDetails: string;
   photos: BookingPhoto[];
+};
+
+type Form = {
+  items: CartItem[];
+  editingIndex: number;
   slot: Slot | null;
   customer: {
     name: string;
@@ -63,12 +69,17 @@ type Form = {
   };
 };
 
-const EMPTY_FORM: Form = {
-  serviceId: null,
+const EMPTY_CART_ITEM: CartItem = {
+  serviceId: "",
   intakeAnswers: {},
   selectedAddonIds: [],
   taskDetails: "",
   photos: [],
+};
+
+const EMPTY_FORM: Form = {
+  items: [],
+  editingIndex: 0,
   slot: null,
   customer: { name: "", email: "", phone: "", preferredContact: "sms" },
   address: { line1: "", line2: "", city: "New York", borough: "", zip: "", accessNotes: "" },
@@ -82,24 +93,43 @@ export function BookingFlow({
   initialServiceId?: string;
 }) {
   const [step, setStep] = useState<StepIndex>(initialServiceId ? 1 : 0);
-  const [form, setForm] = useState<Form>({
+  const [form, setForm] = useState<Form>(() => ({
     ...EMPTY_FORM,
-    serviceId: initialServiceId ?? null,
-  });
+    items: initialServiceId
+      ? [{ ...EMPTY_CART_ITEM, serviceId: initialServiceId }]
+      : [],
+  }));
   const [submitting, setSubmitting] = useState(false);
 
+  const currentItem = form.items[form.editingIndex] ?? null;
+
   const service = useMemo(
-    () => services.find((s) => s.id === form.serviceId) ?? null,
-    [services, form.serviceId]
+    () => (currentItem ? services.find((s) => s.id === currentItem.serviceId) ?? null : null),
+    [services, currentItem],
   );
 
-  const breakdown: PriceBreakdown | null = useMemo(
+  const itemBreakdowns = useMemo(
     () =>
-      service
-        ? computeBreakdown(service, form.intakeAnswers, form.selectedAddonIds)
-        : null,
-    [service, form.intakeAnswers, form.selectedAddonIds]
+      form.items.map((item) => {
+        const svc = services.find((s) => s.id === item.serviceId);
+        return svc ? computeBreakdown(svc, item.intakeAnswers, item.selectedAddonIds) : null;
+      }),
+    [form.items, services],
   );
+
+  const breakdown = itemBreakdowns[form.editingIndex] ?? null;
+
+  const cartTotal = useMemo(() => {
+    let totalDollars = 0;
+    let totalMinutes = 0;
+    for (const bd of itemBreakdowns) {
+      if (bd) {
+        totalDollars += bd.totalDollars;
+        totalMinutes += bd.totalMinutes;
+      }
+    }
+    return { totalDollars, totalMinutes };
+  }, [itemBreakdowns]);
 
   const router = useRouter();
 
@@ -108,19 +138,61 @@ export function BookingFlow({
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function updateCurrentItem(patch: Partial<CartItem>, resetSlot = false) {
+    setForm((f) => {
+      const items = [...f.items];
+      items[f.editingIndex] = { ...items[f.editingIndex], ...patch };
+      return { ...f, items, ...(resetSlot ? { slot: null } : {}) };
+    });
+  }
+
+  function handleServiceSelect(id: string) {
+    setForm((f) => {
+      const newItem: CartItem = { ...EMPTY_CART_ITEM, serviceId: id };
+      if (f.editingIndex < f.items.length) {
+        const items = [...f.items];
+        items[f.editingIndex] = newItem;
+        return { ...f, items, slot: null };
+      }
+      return { ...f, items: [...f.items, newItem], editingIndex: f.items.length, slot: null };
+    });
+    go(1);
+  }
+
+  function handleAddAnother() {
+    setForm((f) => ({ ...f, editingIndex: f.items.length }));
+    go(0);
+  }
+
+  function handleRemoveItem(index: number) {
+    setForm((f) => {
+      const items = f.items.filter((_, i) => i !== index);
+      const editingIndex = Math.min(f.editingIndex, Math.max(0, items.length - 1));
+      return { ...f, items, editingIndex, slot: null };
+    });
+    if (form.items.length <= 1) go(0);
+  }
+
+  function handleEditItem(index: number) {
+    setForm((f) => ({ ...f, editingIndex: index }));
+    go(1);
+  }
+
   async function submit() {
-    if (!service || !form.slot) return;
+    if (form.items.length === 0 || !form.slot) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          serviceId: service.id,
-          intakeAnswers: form.intakeAnswers,
-          selectedAddonIds: form.selectedAddonIds,
-          taskDetails: form.taskDetails,
-          photos: form.photos,
+          items: form.items.map((item) => ({
+            serviceId: item.serviceId,
+            intakeAnswers: item.intakeAnswers,
+            selectedAddonIds: item.selectedAddonIds,
+            taskDetails: item.taskDetails,
+            photos: item.photos,
+          })),
           slot: form.slot,
           customer: form.customer,
           address: form.address,
@@ -136,72 +208,103 @@ export function BookingFlow({
     }
   }
 
-  // Service step has no sidebar (no service picked yet).
   if (step === 0) {
+    const hasCartItems = form.items.length > 0;
+    const serviceSelect = (
+      <ServiceStep
+        services={services}
+        selectedId={null}
+        onSelect={handleServiceSelect}
+      />
+    );
+
+    if (!hasCartItems) {
+      return (
+        <div>
+          <Stepper step={step} />
+          {serviceSelect}
+        </div>
+      );
+    }
+
     return (
       <div>
         <Stepper step={step} />
-        <ServiceStep
-          services={services}
-          selectedId={form.serviceId}
-          onSelect={(id) => {
-            // Reset intake when service changes since questions/add-ons are service-specific.
-            setForm((f) => ({
-              ...f,
-              serviceId: id,
-              intakeAnswers: {},
-              selectedAddonIds: [],
-              slot: null,
-            }));
-            go(1);
-          }}
-        />
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-10">
+          <div className="min-w-0">
+            <CartRibbon
+              items={form.items}
+              services={services}
+              breakdowns={itemBreakdowns}
+              cartTotal={cartTotal}
+              className="mb-6 lg:hidden"
+            />
+            {serviceSelect}
+          </div>
+          <aside className="hidden lg:block">
+            <BookingSummary
+              cartItems={form.items.map((item, i) => ({
+                service: services.find((s) => s.id === item.serviceId)!,
+                breakdown: itemBreakdowns[i]!,
+              })).filter((x) => x.service && x.breakdown)}
+              cartTotal={cartTotal}
+              slot={form.slot}
+              address={form.address}
+              onRemoveItem={handleRemoveItem}
+              onEditItem={handleEditItem}
+              className="sticky top-24"
+            />
+          </aside>
+        </div>
       </div>
     );
   }
 
-  // Steps 1–5: 2-col layout with sticky cart sidebar on lg+.
+  const cartItemsForDisplay = form.items
+    .map((item, i) => ({
+      service: services.find((s) => s.id === item.serviceId)!,
+      breakdown: itemBreakdowns[i]!,
+    }))
+    .filter((x) => x.service && x.breakdown);
+
   return (
     <div>
       <Stepper step={step} />
 
-      {service && breakdown && (
+      {form.items.length > 0 && (
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-10">
           {/* Main column */}
           <div className="min-w-0">
-            {/* Mobile-only compact ribbon (no sidebar room on small screens). */}
-            <div className="lg:hidden">
-              <ServiceRibbon
-                service={service}
-                breakdown={breakdown}
-                onChange={() => go(0)}
-              />
-            </div>
+            {/* Mobile-only compact ribbon */}
+            <CartRibbon
+              items={form.items}
+              services={services}
+              breakdowns={itemBreakdowns}
+              cartTotal={cartTotal}
+              className="mb-6 lg:hidden"
+            />
 
-            {step === 1 && (
+            {step === 1 && service && currentItem && (
               <IntakeStep
                 service={service}
-                answers={form.intakeAnswers}
-                onAnswers={(intakeAnswers) =>
-                  setForm((f) => ({ ...f, intakeAnswers, slot: null }))
-                }
-                selectedAddonIds={form.selectedAddonIds}
-                onAddons={(selectedAddonIds) =>
-                  setForm((f) => ({ ...f, selectedAddonIds, slot: null }))
-                }
-                taskDetails={form.taskDetails}
-                onDetails={(taskDetails) => setForm((f) => ({ ...f, taskDetails }))}
-                photos={form.photos}
-                onPhotos={(photos) => setForm((f) => ({ ...f, photos }))}
+                answers={currentItem.intakeAnswers}
+                onAnswers={(intakeAnswers) => updateCurrentItem({ intakeAnswers }, true)}
+                selectedAddonIds={currentItem.selectedAddonIds}
+                onAddons={(selectedAddonIds) => updateCurrentItem({ selectedAddonIds }, true)}
+                taskDetails={currentItem.taskDetails}
+                onDetails={(taskDetails) => updateCurrentItem({ taskDetails })}
+                photos={currentItem.photos}
+                onPhotos={(photos) => updateCurrentItem({ photos })}
                 onBack={() => go(0)}
                 onContinue={() => go(2)}
+                onAddAnother={handleAddAnother}
               />
             )}
 
             {step === 2 && (
               <SlotStep
-                service={service}
-                totalMinutes={breakdown.totalMinutes}
+                service={service!}
+                totalMinutes={cartTotal.totalMinutes}
                 selectedSlot={form.slot}
                 onSelect={(slot) => setForm((f) => ({ ...f, slot }))}
                 onBack={() => go(1)}
@@ -220,9 +323,11 @@ export function BookingFlow({
 
             {step === 4 && form.slot && (
               <ReviewStep
-                service={service}
+                items={form.items}
+                services={services}
+                itemBreakdowns={itemBreakdowns}
+                cartTotal={cartTotal}
                 form={form}
-                breakdown={breakdown}
                 onBack={() => go(3)}
                 onContinue={() => go(5)}
               />
@@ -230,9 +335,7 @@ export function BookingFlow({
 
             {step === 5 && form.slot && (
               <PaymentStep
-                service={service}
-                form={form}
-                breakdown={breakdown}
+                cartTotal={cartTotal}
                 submitting={submitting}
                 onBack={() => go(4)}
                 onSubmit={submit}
@@ -243,11 +346,13 @@ export function BookingFlow({
           {/* Desktop sticky cart */}
           <aside className="hidden lg:block">
             <BookingSummary
-              service={service}
-              breakdown={breakdown}
+              cartItems={cartItemsForDisplay}
+              cartTotal={cartTotal}
               slot={form.slot}
               address={form.address}
-              onChangeService={() => go(0)}
+              onAddAnother={step <= 1 ? undefined : handleAddAnother}
+              onRemoveItem={handleRemoveItem}
+              onEditItem={handleEditItem}
               className="sticky top-24"
             />
           </aside>
@@ -784,20 +889,22 @@ function DetailsStep({
 /* ---------------- Step 4: Review ---------------- */
 
 function ReviewStep({
-  service,
+  items,
+  services: allServices,
+  itemBreakdowns,
+  cartTotal,
   form,
-  breakdown,
   onBack,
   onContinue,
 }: {
-  service: Service;
+  items: CartItem[];
+  services: Service[];
+  itemBreakdowns: (PriceBreakdown | null)[];
+  cartTotal: { totalDollars: number; totalMinutes: number };
   form: Form;
-  breakdown: PriceBreakdown;
   onBack: () => void;
   onContinue: () => void;
 }) {
-  const intakeSummary = summarizeIntake(service.id, form.intakeAnswers);
-
   return (
     <div>
       <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
@@ -808,45 +915,61 @@ function ReviewStep({
       </p>
 
       <div className="mt-8 space-y-4">
-        <ReviewBlock title="Job details" icon={CheckCircle2}>
-          {intakeSummary.length > 0 ? (
-            intakeSummary.map((item) => (
-              <Row key={item.label} k={item.label} v={item.value} />
-            ))
-          ) : (
-            <Row k="Service" v={service.name} />
-          )}
-          {form.taskDetails && <Row k="Notes" v={form.taskDetails} />}
-          {form.photos.length > 0 && (
-            <div className="px-5 py-3">
-              <span className="block text-sm text-muted">Photos</span>
-              <div className="mt-2">
-                <PhotoGallery photos={form.photos} />
-              </div>
-            </div>
-          )}
-        </ReviewBlock>
+        {items.map((item, idx) => {
+          const svc = allServices.find((s) => s.id === item.serviceId);
+          if (!svc) return null;
+          const intakeSummary = summarizeIntake(svc.id, item.intakeAnswers);
+          return (
+            <ReviewBlock
+              key={idx}
+              title={items.length > 1 ? `Task ${idx + 1}: ${svc.name}` : "Job details"}
+              icon={CheckCircle2}
+            >
+              {intakeSummary.length > 0 ? (
+                intakeSummary.map((si) => (
+                  <Row key={si.label} k={si.label} v={si.value} />
+                ))
+              ) : (
+                <Row k="Service" v={svc.name} />
+              )}
+              {item.taskDetails && <Row k="Notes" v={item.taskDetails} />}
+              {item.photos.length > 0 && (
+                <div className="px-5 py-3">
+                  <span className="block text-sm text-muted">Photos</span>
+                  <div className="mt-2">
+                    <PhotoGallery photos={item.photos} />
+                  </div>
+                </div>
+              )}
+            </ReviewBlock>
+          );
+        })}
 
         <ReviewBlock title="When" icon={CalendarDays}>
           <Row k="Date" v={form.slot ? formatDate(form.slot.start) : "—"} />
           <Row k="Time" v={form.slot?.label ?? "—"} />
-          <Row k="Estimated duration" v={`${breakdown.totalMinutes} min`} />
+          <Row k="Estimated duration" v={`${cartTotal.totalMinutes} min`} />
         </ReviewBlock>
 
         <div className="lg:hidden">
           <ReviewBlock title="Price breakdown" icon={CheckCircle2}>
-            <Row k={service.name} v={formatPriceFromDollars(breakdown.baseDollars)} />
-            {breakdown.items.map((item, i) => (
-              <Row
-                key={i}
-                k={item.label}
-                v={`+${formatPriceFromDollars(item.dollars)}`}
-              />
-            ))}
+            {items.map((item, idx) => {
+              const svc = allServices.find((s) => s.id === item.serviceId);
+              const bd = itemBreakdowns[idx];
+              if (!svc || !bd) return null;
+              return (
+                <div key={idx}>
+                  <Row k={svc.name} v={formatPriceFromDollars(bd.baseDollars)} />
+                  {bd.items.map((li, i) => (
+                    <Row key={i} k={li.label} v={`+${formatPriceFromDollars(li.dollars)}`} />
+                  ))}
+                </div>
+              );
+            })}
             <div className="grid grid-cols-[140px_1fr] gap-4 border-t border-rule px-5 py-3 text-sm">
               <dt className="font-semibold text-ink">Total</dt>
               <dd className="font-display text-lg font-semibold text-ink">
-                {formatPriceFromDollars(breakdown.totalDollars)}
+                {formatPriceFromDollars(cartTotal.totalDollars)}
               </dd>
             </div>
           </ReviewBlock>
@@ -920,22 +1043,16 @@ function Row({ k, v }: { k: string; v: string }) {
 /* ---------------- Step 5: Payment ---------------- */
 
 function PaymentStep({
-  service: _service,
-  form: _form,
-  breakdown,
+  cartTotal,
   submitting,
   onBack,
   onSubmit,
 }: {
-  service: Service;
-  form: Form;
-  breakdown: PriceBreakdown;
+  cartTotal: { totalDollars: number; totalMinutes: number };
   submitting: boolean;
   onBack: () => void;
   onSubmit: () => void;
 }) {
-  void _service;
-  void _form;
   return (
     <div>
       <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
@@ -991,7 +1108,7 @@ function PaymentStep({
         <p>
           By booking you authorize a hold of{" "}
           <span className="font-medium text-ink">
-            {formatPriceFromDollars(breakdown.totalDollars)}
+            {formatPriceFromDollars(cartTotal.totalDollars)}
           </span>
           . We capture only after Manny confirms and the work is completed.
         </p>
@@ -1004,9 +1121,56 @@ function PaymentStep({
         <Button onClick={onSubmit} disabled={submitting}>
           {submitting
             ? "Booking…"
-            : `Confirm booking · ${formatPriceFromDollars(breakdown.totalDollars)}`}
+            : `Confirm booking · ${formatPriceFromDollars(cartTotal.totalDollars)}`}
           <ArrowRight className="size-4" />
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Mobile cart ribbon (replaces ServiceRibbon for multi-item) ---------------- */
+
+function CartRibbon({
+  items,
+  services,
+  breakdowns,
+  cartTotal,
+  className,
+}: {
+  items: CartItem[];
+  services: Service[];
+  breakdowns: (PriceBreakdown | null)[];
+  cartTotal: { totalDollars: number; totalMinutes: number };
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-[14px] border border-rule bg-paper p-4 sm:p-5", className)}>
+      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
+        Your cart · {items.length} {items.length === 1 ? "task" : "tasks"}
+      </p>
+      <ul className="mt-2 space-y-1">
+        {items.map((item, i) => {
+          const svc = services.find((s) => s.id === item.serviceId);
+          const bd = breakdowns[i];
+          if (!svc || !bd) return null;
+          return (
+            <li key={i} className="flex items-baseline justify-between text-sm">
+              <span className="truncate text-ink">{svc.name}</span>
+              <span className="ml-2 shrink-0 tabular-nums text-muted">
+                {formatPriceFromDollars(bd.totalDollars)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-2 flex items-baseline justify-between border-t border-rule pt-2">
+        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+          Total · {cartTotal.totalMinutes} min
+        </span>
+        <span className="font-display text-xl font-extrabold tracking-tight text-ink tabular-nums">
+          {formatPriceFromDollars(cartTotal.totalDollars)}
+        </span>
       </div>
     </div>
   );

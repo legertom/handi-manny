@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { after } from "next/server";
 import { z } from "zod";
 import { generateText, Output } from "ai";
-import { createBooking } from "@/lib/store";
+import { createBooking, type BookingItem } from "@/lib/store";
 import { getServiceById } from "@/lib/services";
 import { authorizeCard } from "@/lib/stripe";
 import { notifyCustomer, notifyManny } from "@/lib/notify";
@@ -21,12 +21,16 @@ const IntakeAnswerSchema = z.union([
   z.array(z.string().max(200)).max(20),
 ]);
 
-const BodySchema = z.object({
+const ItemSchema = z.object({
   serviceId: z.string().min(1),
   intakeAnswers: z.record(z.string(), IntakeAnswerSchema).default({}),
   selectedAddonIds: z.array(z.string().max(80)).max(20).default([]),
   taskDetails: z.string().max(2000).optional().default(""),
   photos: z.array(PhotoSchema).max(5).optional().default([]),
+});
+
+const BodySchema = z.object({
+  items: z.array(ItemSchema).min(1).max(10),
   slot: z.object({
     start: z.string().datetime(),
     end: z.string().datetime(),
@@ -65,32 +69,58 @@ export async function POST(request: Request) {
   }
 
   const data = parsed.data;
-  const service = getServiceById(data.serviceId);
-  if (!service) {
-    return NextResponse.json({ error: "Unknown service" }, { status: 404 });
+
+  // Validate each item and compute breakdowns.
+  const bookingItems: BookingItem[] = [];
+  let totalDollars = 0;
+  let totalMinutes = 0;
+
+  for (const item of data.items) {
+    const service = getServiceById(item.serviceId);
+    if (!service) {
+      return NextResponse.json({ error: `Unknown service: ${item.serviceId}` }, { status: 404 });
+    }
+
+    const intakeCheck = validateIntake(service, item.intakeAnswers, item.selectedAddonIds);
+    if (!intakeCheck.ok) {
+      return NextResponse.json(
+        {
+          error: `Invalid intake for ${service.name}`,
+          reason: intakeCheck.reason,
+          hardBlock: intakeCheck.hardBlock,
+        },
+        { status: 422 }
+      );
+    }
+
+    const breakdown = computeBreakdown(service, item.intakeAnswers, item.selectedAddonIds);
+    totalDollars += breakdown.totalDollars;
+    totalMinutes += breakdown.totalMinutes;
+
+    bookingItems.push({
+      serviceId: service.id,
+      serviceName: service.name,
+      intakeAnswers: item.intakeAnswers,
+      selectedAddonIds: item.selectedAddonIds,
+      taskDetails: item.taskDetails,
+      photos: item.photos,
+      priceBreakdown: breakdown,
+    });
   }
 
-  // Server is the source of truth for intake validity + price.
-  const intakeCheck = validateIntake(service, data.intakeAnswers, data.selectedAddonIds);
-  if (!intakeCheck.ok) {
-    return NextResponse.json(
-      {
-        error: "Invalid intake",
-        reason: intakeCheck.reason,
-        hardBlock: intakeCheck.hardBlock,
-      },
-      { status: 422 }
-    );
-  }
+  const firstItem = bookingItems[0];
 
-  const breakdown = computeBreakdown(service, data.intakeAnswers, data.selectedAddonIds);
-
-  // Create booking first so we have an ID for the Stripe metadata.
   const booking = createBooking({
-    serviceId: service.id,
-    serviceName: service.name,
-    priceDollars: breakdown.totalDollars,
-    durationMinutes: breakdown.totalMinutes,
+    items: bookingItems,
+    serviceId: firstItem.serviceId,
+    serviceName: firstItem.serviceName,
+    intakeAnswers: firstItem.intakeAnswers,
+    selectedAddonIds: firstItem.selectedAddonIds,
+    taskDetails: firstItem.taskDetails,
+    photos: firstItem.photos,
+    priceBreakdown: firstItem.priceBreakdown,
+    priceDollars: totalDollars,
+    durationMinutes: totalMinutes,
     scheduledStart: data.slot.start,
     scheduledEnd: data.slot.end,
     customer: data.customer,
@@ -102,23 +132,16 @@ export async function POST(request: Request) {
       zip: data.address.zip,
       accessNotes: data.address.accessNotes || undefined,
     },
-    taskDetails: data.taskDetails,
-    photos: data.photos,
-    intakeAnswers: data.intakeAnswers,
-    selectedAddonIds: data.selectedAddonIds,
-    priceBreakdown: breakdown,
   });
 
-  // Authorize (placeholder until Stripe is wired).
   const auth = await authorizeCard({
     bookingId: booking.id,
-    amountDollars: breakdown.totalDollars,
+    amountDollars: totalDollars,
   });
 
-  // after() runs AFTER the response is sent — the customer sees instant confirmation
-  // while AI generates a personalized message and notifications fire in the background.
-  // On Vercel, Fluid Compute keeps the function instance alive for this work.
   after(async () => {
+    const serviceList = bookingItems.map((i) => i.serviceName).join(", ");
+
     const confirmationSchema = z.object({
       subject: z.string().describe("Email subject line"),
       body: z.string().describe("Friendly confirmation message, 2-3 short paragraphs"),
@@ -131,13 +154,13 @@ export async function POST(request: Request) {
         output: Output.object({ schema: confirmationSchema }),
         prompt: `Generate a booking confirmation for:
 - Customer: ${booking.customer.name}
-- Service: ${booking.serviceName} ($${booking.priceDollars})
+- Services: ${serviceList} ($${totalDollars} total)
 - When: ${booking.scheduledStart}
 - Where: ${booking.address.borough}, NY
-- Details: ${booking.taskDetails ?? "none"}
+- Number of tasks: ${bookingItems.length}
 
 For the customer email: be warm, include what to have ready, mention free cancellation 24hr+ out.
-For Manny's SMS: keep it under 160 chars, include customer first name, service, date, and borough.`,
+For Manny's SMS: keep it under 160 chars, include customer first name, services, date, and borough.`,
       });
 
       if (message) {

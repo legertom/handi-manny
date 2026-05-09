@@ -39,18 +39,20 @@ export async function POST(request: Request) {
 Given this booking, create a practical briefing he can read on his phone before heading out.
 
 BOOKING DETAILS:
-- Service: ${booking.serviceName}
-- Price: $${booking.priceDollars}
-- Duration: ${booking.durationMinutes} minutes
+- Services: ${(booking.items ?? [{ serviceName: booking.serviceName, intakeAnswers: booking.intakeAnswers, selectedAddonIds: booking.selectedAddonIds, taskDetails: booking.taskDetails, photos: booking.photos }]).map((i: { serviceName: string }) => i.serviceName).join(", ")}
+- Total price: $${booking.priceDollars}
+- Total duration: ${booking.durationMinutes} minutes
 - When: ${booking.scheduledStart}
 - Customer: ${booking.customer?.name ?? "Unknown"}
 - Borough: ${booking.address?.borough ?? "Unknown"}
 - Address: ${booking.address?.line1 ?? "Unknown"}
 - Access notes: ${booking.address?.accessNotes ?? "None"}
-- Task details: ${booking.taskDetails ?? "None provided"}
-- Intake answers: ${JSON.stringify(booking.intakeAnswers ?? {})}
-- Add-ons: ${JSON.stringify(booking.selectedAddonIds ?? [])}
-- Photos: ${booking.photos?.length ?? 0} attached
+${(booking.items ?? [{ serviceName: booking.serviceName, intakeAnswers: booking.intakeAnswers, selectedAddonIds: booking.selectedAddonIds, taskDetails: booking.taskDetails, photos: booking.photos }]).map((item: { serviceName: string; taskDetails?: string; intakeAnswers: Record<string, unknown>; selectedAddonIds: string[]; photos?: unknown[] }, idx: number) => `
+TASK ${idx + 1}: ${item.serviceName}
+- Task details: ${item.taskDetails ?? "None provided"}
+- Intake answers: ${JSON.stringify(item.intakeAnswers ?? {})}
+- Add-ons: ${JSON.stringify(item.selectedAddonIds ?? [])}
+- Photos: ${item.photos?.length ?? 0} attached`).join("\n")}
 
 RULES:
 - Be practical and specific. "Bring a stud finder" is better than "bring appropriate tools."

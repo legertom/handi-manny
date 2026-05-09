@@ -61,8 +61,20 @@ async function MannyBookingContent({
   const { id } = await params;
   const booking = getBooking(id);
   if (!booking) notFound();
-  const service = getServiceById(booking.serviceId);
+
+  const items = booking.items ?? [{
+    serviceId: booking.serviceId,
+    serviceName: booking.serviceName,
+    intakeAnswers: booking.intakeAnswers,
+    selectedAddonIds: booking.selectedAddonIds,
+    taskDetails: booking.taskDetails,
+    photos: booking.photos,
+    priceBreakdown: booking.priceBreakdown,
+  }];
+
+  const service = getServiceById(items[0].serviceId);
   if (!service) notFound();
+  const serviceNames = items.map((i) => i.serviceName).join(" + ");
 
   return (
     <div className="mx-auto max-w-xl px-4 pb-32 pt-6 sm:px-6 sm:pt-10">
@@ -77,7 +89,7 @@ async function MannyBookingContent({
       <div className="mt-4">
         <StatusHeader booking={booking} />
         <h1 className="mt-3 font-display text-3xl font-extrabold leading-tight tracking-tight text-ink">
-          {service.name}
+          {serviceNames}
         </h1>
         <p className="mt-1 font-mono text-xs uppercase tracking-[0.18em] text-muted">
           #{booking.id.slice(0, 8)} · {formatPriceFromDollars(booking.priceDollars)}
@@ -139,7 +151,7 @@ async function MannyBookingContent({
           <TapAction
             href={smsUrl(
               booking.customer.phone,
-              `Hey ${booking.customer.name.split(" ")[0]}, this is Manny — just confirming our ${service.name.toLowerCase()} on ${formatShortDate(booking.scheduledStart)} at ${formatTime(booking.scheduledStart)}.`
+              `Hey ${booking.customer.name.split(" ")[0]}, this is Manny — just confirming our ${serviceNames.toLowerCase()} on ${formatShortDate(booking.scheduledStart)} at ${formatTime(booking.scheduledStart)}.`
             )}
             icon={MessageSquare}
             label="Text"
@@ -160,27 +172,53 @@ async function MannyBookingContent({
       </Section>
 
       {/* Job details from intake — surfaced prominently for prep */}
-      <JobIntakeSection booking={booking} />
+      {items.map((item, idx) => (
+        <JobIntakeSection key={idx} item={item} index={idx} total={items.length} />
+      ))}
 
       {/* AI-generated briefing */}
       <AIBriefing booking={booking} />
 
-      {/* Photos */}
-      {booking.photos.length > 0 && (
-        <Section icon={ImageIcon} label={`Photos · ${booking.photos.length}`}>
-          <PhotoGallery photos={booking.photos} />
+      {/* Photos — aggregate from all items */}
+      {items.some((i) => (i.photos?.length ?? 0) > 0) && (
+        <Section icon={ImageIcon} label="Photos">
+          {items.map((item, idx) => {
+            if (!item.photos?.length) return null;
+            return (
+              <div key={idx} className={idx > 0 ? "mt-4" : ""}>
+                {items.length > 1 && (
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                    {item.serviceName}
+                  </p>
+                )}
+                <PhotoGallery photos={item.photos} />
+              </div>
+            );
+          })}
           <p className="mt-3 text-xs text-muted-soft">
             Tap to view full-size.
           </p>
         </Section>
       )}
 
-      {/* Job notes */}
-      {booking.taskDetails && (
+      {/* Job notes — aggregate from all items */}
+      {items.some((i) => !!i.taskDetails) && (
         <Section icon={MessageSquare} label="Notes from customer">
-          <p className="whitespace-pre-line text-[15px] leading-relaxed text-ink-soft">
-            {booking.taskDetails}
-          </p>
+          {items.map((item, idx) => {
+            if (!item.taskDetails) return null;
+            return (
+              <div key={idx} className={idx > 0 ? "mt-3" : ""}>
+                {items.length > 1 && (
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                    {item.serviceName}
+                  </p>
+                )}
+                <p className="whitespace-pre-line text-[15px] leading-relaxed text-ink-soft">
+                  {item.taskDetails}
+                </p>
+              </div>
+            );
+          })}
         </Section>
       )}
 
@@ -253,13 +291,21 @@ function TapAction({
   );
 }
 
-function JobIntakeSection({ booking }: { booking: Booking }) {
-  const intake = getIntake(booking.serviceId);
-  const summary = summarizeIntake(booking.serviceId, booking.intakeAnswers);
+function JobIntakeSection({
+  item,
+  index,
+  total,
+}: {
+  item: { serviceId: string; serviceName: string; intakeAnswers: Record<string, unknown>; selectedAddonIds: string[]; priceBreakdown: Booking["priceBreakdown"] };
+  index: number;
+  total: number;
+}) {
+  const intake = getIntake(item.serviceId);
+  const summary = summarizeIntake(item.serviceId, item.intakeAnswers as Record<string, string | string[] | undefined>);
   const selectedAddons = intake.addons.filter((a) =>
-    booking.selectedAddonIds.includes(a.id)
+    item.selectedAddonIds.includes(a.id)
   );
-  const breakdown = booking.priceBreakdown;
+  const breakdown = item.priceBreakdown;
 
   if (
     summary.length === 0 &&
@@ -269,17 +315,19 @@ function JobIntakeSection({ booking }: { booking: Booking }) {
     return null;
   }
 
+  const label = total > 1 ? `Task ${index + 1}: ${item.serviceName}` : "Job details";
+
   return (
-    <Section icon={ListChecks} label="Job details">
+    <Section icon={ListChecks} label={label}>
       {summary.length > 0 && (
         <dl className="space-y-2">
-          {summary.map((item) => (
+          {summary.map((si) => (
             <div
-              key={item.label}
+              key={si.label}
               className="grid grid-cols-[110px_1fr] gap-3 text-sm"
             >
-              <dt className="text-muted">{item.label}</dt>
-              <dd className="text-ink">{item.value}</dd>
+              <dt className="text-muted">{si.label}</dt>
+              <dd className="text-ink">{si.value}</dd>
             </div>
           ))}
         </dl>
@@ -310,23 +358,23 @@ function JobIntakeSection({ booking }: { booking: Booking }) {
       {breakdown.items.length > 0 && (
         <div className="mt-4 rounded-[10px] border border-rule bg-background/60 p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-            Total breakdown
+            Price breakdown
           </p>
           <ul className="mt-2 space-y-1 text-sm">
             <li className="flex justify-between">
-              <span className="text-muted">{booking.serviceName}</span>
+              <span className="text-muted">{item.serviceName}</span>
               <span className="text-ink">
                 {formatPriceFromDollars(breakdown.baseDollars)}
               </span>
             </li>
-            {breakdown.items.map((item, i) => (
+            {breakdown.items.map((li, i) => (
               <li key={i} className="flex justify-between">
-                <span className="text-muted">{item.label}</span>
-                <span className="text-ink">+{formatPriceFromDollars(item.dollars)}</span>
+                <span className="text-muted">{li.label}</span>
+                <span className="text-ink">+{formatPriceFromDollars(li.dollars)}</span>
               </li>
             ))}
             <li className="mt-1 flex justify-between border-t border-rule pt-1.5 font-semibold">
-              <span className="text-ink">Total</span>
+              <span className="text-ink">Subtotal</span>
               <span className="text-ink">
                 {formatPriceFromDollars(breakdown.totalDollars)}
               </span>

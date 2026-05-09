@@ -199,7 +199,9 @@ function BookingRow({
               </span>
             </div>
             <h3 className="mt-2 font-display text-lg font-semibold tracking-tight text-ink">
-              {booking.serviceName}
+              {booking.items?.length > 1
+                ? booking.items.map((i) => i.serviceName).join(" + ")
+                : booking.serviceName}
             </h3>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
               <span className="flex items-center gap-1.5">
@@ -214,12 +216,17 @@ function BookingRow({
             <div className="mt-2 flex items-center gap-2 text-sm text-ink">
               <span className="font-medium">{booking.customer.name}</span>
               <span className="text-muted">· {booking.address.borough}</span>
-              {booking.photos.length > 0 && (
-                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-rule bg-background/60 px-2 py-0.5 text-xs text-muted">
-                  <ImageIcon className="size-3" />
-                  {booking.photos.length}
-                </span>
-              )}
+              {(() => {
+                const photoCount = booking.items
+                  ? booking.items.reduce((n, i) => n + (i.photos?.length ?? 0), 0)
+                  : booking.photos.length;
+                return photoCount > 0 ? (
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-rule bg-background/60 px-2 py-0.5 text-xs text-muted">
+                    <ImageIcon className="size-3" />
+                    {photoCount}
+                  </span>
+                ) : null;
+              })()}
             </div>
           </div>
           <ChevronRight className="mt-1 size-5 shrink-0 text-muted-soft lg:mt-0" />

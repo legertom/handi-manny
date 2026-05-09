@@ -23,10 +23,28 @@ export type BookingPhoto = {
   height?: number;
 };
 
-export type Booking = {
-  id: string;
+export type BookingItem = {
   serviceId: string;
   serviceName: string;
+  intakeAnswers: IntakeAnswers;
+  selectedAddonIds: string[];
+  taskDetails?: string;
+  photos: BookingPhoto[];
+  priceBreakdown: PriceBreakdown;
+};
+
+export type Booking = {
+  id: string;
+  items: BookingItem[];
+  // Derived from first item — kept for convenience in single-service code paths.
+  serviceId: string;
+  serviceName: string;
+  intakeAnswers: IntakeAnswers;
+  selectedAddonIds: string[];
+  taskDetails?: string;
+  photos: BookingPhoto[];
+  priceBreakdown: PriceBreakdown;
+  // Aggregated across all items.
   priceDollars: number;
   durationMinutes: number;
   scheduledStart: string; // ISO
@@ -45,11 +63,6 @@ export type Booking = {
     zip: string;
     accessNotes?: string;
   };
-  taskDetails?: string;
-  photos: BookingPhoto[];
-  intakeAnswers: IntakeAnswers;
-  selectedAddonIds: string[];
-  priceBreakdown: PriceBreakdown;
   status: BookingStatus;
   createdAt: string;
   updatedAt: string;

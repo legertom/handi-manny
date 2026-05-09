@@ -30,6 +30,7 @@ export function IntakeStep({
   onPhotos,
   onBack,
   onContinue,
+  onAddAnother,
 }: {
   service: Service;
   answers: IntakeAnswers;
@@ -42,6 +43,7 @@ export function IntakeStep({
   onPhotos: (next: BookingPhoto[]) => void;
   onBack: () => void;
   onContinue: () => void;
+  onAddAnother?: () => void;
 }) {
   const intake = getIntake(service.id);
   const validation = useMemo(
@@ -179,14 +181,29 @@ export function IntakeStep({
       )}
 
       {/* Mobile sticky CTA + desktop nav */}
-      <div className="mt-12 flex items-center justify-between">
-        <Button type="button" variant="ghost" onClick={onBack}>
-          <ArrowLeft className="size-4" /> Back
-        </Button>
-        <Button onClick={onContinue} disabled={!validation.ok}>
-          Continue · {formatPriceFromDollars(breakdown.totalDollars)}
-          <ArrowRight className="size-4" />
-        </Button>
+      <div className="mt-12 space-y-3">
+        <div className="flex items-center justify-between">
+          <Button type="button" variant="ghost" onClick={onBack}>
+            <ArrowLeft className="size-4" /> Back
+          </Button>
+          <Button onClick={onContinue} disabled={!validation.ok}>
+            Continue · {formatPriceFromDollars(breakdown.totalDollars)}
+            <ArrowRight className="size-4" />
+          </Button>
+        </div>
+        {onAddAnother && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => { if (validation.ok) onAddAnother(); }}
+              disabled={!validation.ok}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline disabled:opacity-40 disabled:no-underline"
+            >
+              <Plus className="size-4" />
+              Add another task to this visit
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

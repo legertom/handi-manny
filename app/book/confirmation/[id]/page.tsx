@@ -45,8 +45,19 @@ async function ConfirmationContent({
   const { id } = await params;
   const booking = getBooking(id);
   if (!booking) notFound();
-  const service = getServiceById(booking.serviceId);
-  if (!service) notFound();
+
+  const items = booking.items ?? [{
+    serviceId: booking.serviceId,
+    serviceName: booking.serviceName,
+    intakeAnswers: booking.intakeAnswers,
+    selectedAddonIds: booking.selectedAddonIds,
+    taskDetails: booking.taskDetails,
+    photos: booking.photos,
+    priceBreakdown: booking.priceBreakdown,
+  }];
+
+  const taskCount = items.length;
+  const serviceNames = items.map((i) => i.serviceName).join(" + ");
 
   return (
     <div className="mx-auto max-w-3xl px-5 py-12 sm:px-8 sm:py-20">
@@ -60,7 +71,9 @@ async function ConfirmationContent({
         <h1 className="mt-4 font-display text-3xl font-extrabold tracking-tight text-ink sm:text-5xl">
           Thanks{booking.customer.name ? `, ${booking.customer.name.split(" ")[0]}` : ""}.
           <br />
-          <span className="text-muted">Manny&rsquo;s reviewing your job.</span>
+          <span className="text-muted">
+            Manny&rsquo;s reviewing your {taskCount > 1 ? `${taskCount} tasks` : "job"}.
+          </span>
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-pretty text-muted">
           You&rsquo;ll get a {booking.customer.preferredContact === "sms" ? "text" : "email"} as
@@ -77,7 +90,7 @@ async function ConfirmationContent({
                 Booking #{booking.id.slice(0, 8)}
               </p>
               <h2 className="mt-1 font-display text-2xl font-extrabold tracking-tight text-ink">
-                {service.name}
+                {serviceNames}
               </h2>
             </div>
             <span className="font-display text-2xl font-extrabold tracking-tight text-ink">
@@ -112,72 +125,68 @@ async function ConfirmationContent({
             </Detail>
           </div>
 
-          {(() => {
-            const intakeSummary = summarizeIntake(booking.serviceId, booking.intakeAnswers);
-            return intakeSummary.length > 0 ? (
-              <div className="mt-6 rounded-[10px] border border-rule bg-background/60 p-4">
+          {/* Per-item job details */}
+          {items.map((item, idx) => {
+            const intakeSummary = summarizeIntake(item.serviceId, item.intakeAnswers);
+            const hasDetails = intakeSummary.length > 0 || item.taskDetails || (item.photos?.length ?? 0) > 0;
+            if (!hasDetails) return null;
+            return (
+              <div key={idx} className="mt-6 rounded-[10px] border border-rule bg-background/60 p-4">
                 <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                  Job details
+                  {taskCount > 1 ? `Task ${idx + 1}: ${item.serviceName}` : "Job details"}
                 </span>
-                <dl className="mt-2 space-y-1.5 text-sm">
-                  {intakeSummary.map((item) => (
-                    <div key={item.label} className="grid grid-cols-[110px_1fr] gap-3">
-                      <dt className="text-muted">{item.label}</dt>
-                      <dd className="text-ink">{item.value}</dd>
+                {intakeSummary.length > 0 && (
+                  <dl className="mt-2 space-y-1.5 text-sm">
+                    {intakeSummary.map((si) => (
+                      <div key={si.label} className="grid grid-cols-[110px_1fr] gap-3">
+                        <dt className="text-muted">{si.label}</dt>
+                        <dd className="text-ink">{si.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {item.taskDetails && (
+                  <p className="mt-2 text-sm text-ink-soft">{item.taskDetails}</p>
+                )}
+                {(item.photos?.length ?? 0) > 0 && (
+                  <div className="mt-2">
+                    <PhotoGallery photos={item.photos} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Price breakdown */}
+          <div className="mt-4 rounded-[10px] border border-rule bg-background/60 p-4">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+              Price breakdown
+            </span>
+            <ul className="mt-2 space-y-1 text-sm">
+              {items.map((item, idx) => (
+                <li key={idx}>
+                  <div className="flex justify-between">
+                    <span className="text-muted">{item.serviceName}</span>
+                    <span className="text-ink">
+                      {formatPriceFromDollars(item.priceBreakdown.baseDollars)}
+                    </span>
+                  </div>
+                  {item.priceBreakdown.items.map((li, i) => (
+                    <div key={i} className="flex justify-between pl-3">
+                      <span className="text-muted">{li.label}</span>
+                      <span className="text-ink">+{formatPriceFromDollars(li.dollars)}</span>
                     </div>
                   ))}
-                </dl>
-              </div>
-            ) : null;
-          })()}
-
-          {booking.priceBreakdown.items.length > 0 && (
-            <div className="mt-4 rounded-[10px] border border-rule bg-background/60 p-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                Price breakdown
-              </span>
-              <ul className="mt-2 space-y-1 text-sm">
-                <li className="flex justify-between">
-                  <span className="text-muted">{booking.serviceName}</span>
-                  <span className="text-ink">
-                    {formatPriceFromDollars(booking.priceBreakdown.baseDollars)}
-                  </span>
                 </li>
-                {booking.priceBreakdown.items.map((item, i) => (
-                  <li key={i} className="flex justify-between">
-                    <span className="text-muted">{item.label}</span>
-                    <span className="text-ink">+{formatPriceFromDollars(item.dollars)}</span>
-                  </li>
-                ))}
-                <li className="mt-1 flex justify-between border-t border-rule pt-1.5 font-semibold">
-                  <span className="text-ink">Total</span>
-                  <span className="text-ink">
-                    {formatPriceFromDollars(booking.priceBreakdown.totalDollars)}
-                  </span>
-                </li>
-              </ul>
-            </div>
-          )}
-
-          {booking.taskDetails && (
-            <div className="mt-4 rounded-[10px] border border-rule bg-background/60 p-4 text-sm text-ink-soft">
-              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                Your notes
-              </span>
-              <p className="mt-1">{booking.taskDetails}</p>
-            </div>
-          )}
-
-          {booking.photos.length > 0 && (
-            <div className="mt-6">
-              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                Photos you sent
-              </span>
-              <div className="mt-2">
-                <PhotoGallery photos={booking.photos} />
-              </div>
-            </div>
-          )}
+              ))}
+              <li className="mt-1 flex justify-between border-t border-rule pt-1.5 font-semibold">
+                <span className="text-ink">Total</span>
+                <span className="text-ink">
+                  {formatPriceFromDollars(booking.priceDollars)}
+                </span>
+              </li>
+            </ul>
+          </div>
         </CardContent>
       </Card>
 
