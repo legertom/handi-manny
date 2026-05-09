@@ -8,7 +8,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const booking = getBooking(id);
+  const booking = await getBooking(id);
   if (!booking) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (booking.status !== "pending") {
     return NextResponse.json(
@@ -21,7 +21,7 @@ export async function POST(
     await voidAuthorization(booking.stripePaymentIntentId);
   }
 
-  const updated = updateBooking(id, { status: "declined" });
+  const updated = await updateBooking(id, { status: "declined" });
   if (updated) await notifyCustomer(updated, "booking_declined");
 
   return NextResponse.json({ booking: updated });

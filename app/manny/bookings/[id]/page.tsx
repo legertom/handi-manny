@@ -59,7 +59,7 @@ async function MannyBookingContent({
 }) {
   await connection();
   const { id } = await params;
-  const booking = getBooking(id);
+  const booking = await getBooking(id);
   if (!booking) notFound();
 
   const items = booking.items ?? [{

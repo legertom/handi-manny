@@ -110,7 +110,7 @@ export async function POST(request: Request) {
 
   const firstItem = bookingItems[0];
 
-  const booking = createBooking({
+  const booking = await createBooking({
     items: bookingItems,
     serviceId: firstItem.serviceId,
     serviceName: firstItem.serviceName,

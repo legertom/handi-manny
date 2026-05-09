@@ -8,6 +8,6 @@ export async function GET(request: Request) {
   const safeDuration = Math.min(Math.max(duration, 30), 480);
   const safeDays = Math.min(Math.max(days, 1), 30);
 
-  const result = getUpcomingAvailability(safeDuration, safeDays);
+  const result = await getUpcomingAvailability(safeDuration, safeDays);
   return NextResponse.json({ days: result });
 }

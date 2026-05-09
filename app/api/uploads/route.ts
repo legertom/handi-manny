@@ -52,13 +52,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const stored = saveUpload({
+    const stored = await saveUpload({
       mimeType: parsed.mimeType,
       bytes: parsed.bytes,
     });
     out.push({
       id: stored.id,
-      url: `/api/uploads/${stored.id}`,
+      url: stored.url,
       mimeType: stored.mimeType,
       width: photo.width,
       height: photo.height,

@@ -95,10 +95,12 @@ async function CachedServiceCatalog() {
 async function LiveAvailability() {
   await connection();
   const popular = SERVICES.filter((s) => s.popular);
-  const availability = popular.map((service) => ({
-    service,
-    days: getUpcomingAvailability(service.durationMinutes, 3),
-  }));
+  const availability = await Promise.all(
+    popular.map(async (service) => ({
+      service,
+      days: await getUpcomingAvailability(service.durationMinutes, 3),
+    })),
+  );
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,27 +1,5 @@
-// In-memory image bytes for the demo. Swap to Vercel Blob before launch:
-//
-//   import { put } from '@vercel/blob';
-//   const blob = await put(filename, buffer, { access: 'public' });
-//   return { url: blob.url, mimeType };
-//
-// Until then, bytes live in this module-level Map and are served by /api/uploads/[id].
-
 import { randomUUID } from "node:crypto";
-
-export type StoredUpload = {
-  id: string;
-  mimeType: string;
-  bytes: Buffer;
-  createdAt: string;
-};
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __HANDIMANNY_UPLOADS__: Map<string, StoredUpload> | undefined;
-}
-
-const store: Map<string, StoredUpload> = (globalThis.__HANDIMANNY_UPLOADS__ ??=
-  new Map());
+import { supabaseAdmin } from "./supabase/admin";
 
 export const ALLOWED_MIME = new Set([
   "image/jpeg",
@@ -31,23 +9,44 @@ export const ALLOWED_MIME = new Set([
   "image/heif",
 ]);
 
-/** Max bytes per uploaded image (after client-side compression). */
 export const MAX_BYTES = 2 * 1024 * 1024;
 
-export function saveUpload(opts: {
+const BUCKET = "booking-photos";
+
+const MIME_TO_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+};
+
+export type StoredUpload = {
+  id: string;
+  url: string;
+  mimeType: string;
+};
+
+export async function saveUpload(opts: {
   mimeType: string;
   bytes: Buffer;
-}): StoredUpload {
-  const upload: StoredUpload = {
-    id: randomUUID(),
-    mimeType: opts.mimeType,
-    bytes: opts.bytes,
-    createdAt: new Date().toISOString(),
-  };
-  store.set(upload.id, upload);
-  return upload;
-}
+}): Promise<StoredUpload> {
+  const id = randomUUID();
+  const ext = MIME_TO_EXT[opts.mimeType] ?? "bin";
+  const path = `${id}.${ext}`;
 
-export function getUpload(id: string): StoredUpload | undefined {
-  return store.get(id);
+  const { error } = await supabaseAdmin().storage
+    .from(BUCKET)
+    .upload(path, opts.bytes, {
+      contentType: opts.mimeType,
+      upsert: false,
+    });
+
+  if (error) throw error;
+
+  const {
+    data: { publicUrl },
+  } = supabaseAdmin().storage.from(BUCKET).getPublicUrl(path);
+
+  return { id, url: publicUrl, mimeType: opts.mimeType };
 }

@@ -123,9 +123,9 @@ export const chatAgent = new ToolLoopAgent({
       execute: async ({ serviceId, days }) => {
         const service = getServiceById(serviceId);
         if (!service) return { error: "Unknown service" };
-        const availability = getUpcomingAvailability(
+        const availability = await getUpcomingAvailability(
           service.durationMinutes,
-          days
+          days,
         );
         return {
           service: service.name,
@@ -188,7 +188,18 @@ export const chatAgent = new ToolLoopAgent({
         const start = parseISO(input.slotStart);
         const end = addMinutes(start, service.durationMinutes);
 
-        const booking = storeBooking({
+        const singleItem = {
+          serviceId: service.id,
+          serviceName: service.name,
+          intakeAnswers: {},
+          selectedAddonIds: [] as string[],
+          taskDetails: input.taskDetails,
+          photos: [] as { id: string; url: string; mimeType: string }[],
+          priceBreakdown: breakdown,
+        };
+
+        const booking = await storeBooking({
+          items: [singleItem],
           serviceId: service.id,
           serviceName: service.name,
           priceDollars: breakdown.totalDollars,

@@ -8,7 +8,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const booking = getBooking(id);
+  const booking = await getBooking(id);
   if (!booking) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (booking.status !== "pending") {
     return NextResponse.json(
@@ -17,14 +17,11 @@ export async function POST(
     );
   }
 
-  // In production: capture happens after the job is completed, not on confirm.
-  // For now we mark as confirmed and notify the customer.
-  // TODO when Stripe is wired: call stripe.paymentIntents.capture(pi) on completion, not here.
   if (booking.stripePaymentIntentId) {
     await captureAuthorization(booking.stripePaymentIntentId);
   }
 
-  const updated = updateBooking(id, { status: "confirmed" });
+  const updated = await updateBooking(id, { status: "confirmed" });
   if (updated) await notifyCustomer(updated, "booking_confirmed");
 
   return NextResponse.json({ booking: updated });
