@@ -49,11 +49,18 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
   const isStreaming = status === "submitted" || status === "streaming";
   const isEmpty = messages.length === 0;
 
+  useEffect(() => {
+    if (!isStreaming) {
+      inputRef.current?.focus();
+    }
+  }, [isStreaming]);
+
   function submit(text: string) {
     const trimmed = text.trim();
     if (!trimmed || isStreaming) return;
     sendMessage({ text: trimmed });
     setInput("");
+    inputRef.current?.focus();
   }
 
   return (
