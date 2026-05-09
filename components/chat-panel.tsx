@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Send,
   Sparkles,
@@ -207,14 +209,12 @@ function Message({ message }: { message: ChatUIMessage }) {
           "max-w-[88%] rounded-[14px] px-3.5 py-2.5 text-[14.5px] leading-relaxed",
           isUser
             ? "bg-ink text-paper"
-            : "bg-background border border-rule text-ink"
+            : "bg-paper border border-rule text-ink"
         )}
       >
         {message.parts.map((part, i) => {
           if (part.type === "text") {
-            return (
-              <RichText key={i} text={part.text} muted={isUser} />
-            );
+            return <Markdown key={i} text={part.text} muted={isUser} />;
           }
           if (part.type.startsWith("tool-")) {
             return <ToolPart key={i} part={part} />;
@@ -263,52 +263,94 @@ function ToolPart({ part }: { part: { type: string; state?: string } }) {
   );
 }
 
-/* ---------------- Tiny markdown-ish renderer ---------------- */
+/* ---------------- Markdown renderer ---------------- */
 
-function RichText({ text, muted }: { text: string; muted?: boolean }) {
-  // Lightweight: linkify booking URLs and strip markdown bold/italic markers cleanly.
-  const nodes: React.ReactNode[] = [];
-  const lines = text.split(/\n+/);
-  lines.forEach((line, i) => {
-    if (i > 0) nodes.push(<br key={`br-${i}`} />);
-    // Match /book?service=<id>
-    const re = /(\/book(?:\?service=[a-z0-9-]+)?)/g;
-    let lastIdx = 0;
-    let m: RegExpExecArray | null;
-    let segIdx = 0;
-    while ((m = re.exec(line))) {
-      if (m.index > lastIdx) {
-        nodes.push(
-          <span key={`t-${i}-${segIdx++}`}>
-            {stripMarkers(line.slice(lastIdx, m.index))}
-          </span>
-        );
-      }
-      nodes.push(
-        <Link
-          key={`l-${i}-${segIdx++}`}
-          href={m[1]}
-          className={cn(
-            "underline underline-offset-2 font-medium",
-            muted ? "text-paper" : "text-brand"
-          )}
-        >
-          Book it →
-        </Link>
-      );
-      lastIdx = m.index + m[1].length;
-    }
-    if (lastIdx < line.length) {
-      nodes.push(
-        <span key={`t-${i}-${segIdx++}`}>
-          {stripMarkers(line.slice(lastIdx))}
-        </span>
-      );
-    }
-  });
-  return <>{nodes}</>;
-}
+function Markdown({ text, muted }: { text: string; muted?: boolean }) {
+  const linkClass = cn(
+    "inline-flex items-center gap-0.5 font-semibold underline-offset-2 hover:underline",
+    muted ? "text-paper" : "text-brand"
+  );
 
-function stripMarkers(s: string) {
-  return s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1");
+  return (
+    <div
+      className={cn(
+        "space-y-2 [&>p]:m-0 [&_strong]:font-semibold [&_em]:italic",
+        "[&_ul]:list-none [&_ul]:m-0 [&_ul]:p-0 [&_ul]:space-y-1",
+        "[&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1",
+        "[&_li]:relative [&_li]:pl-3.5",
+        "[&_ul>li]:before:absolute [&_ul>li]:before:left-0 [&_ul>li]:before:top-2 [&_ul>li]:before:size-1 [&_ul>li]:before:rounded-full",
+        muted
+          ? "[&_ul>li]:before:bg-paper/60"
+          : "[&_ul>li]:before:bg-brand"
+      )}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Internal app links open in-app via Next Link; external open in new tab.
+          a({ href, children, ...props }) {
+            const url = String(href ?? "");
+            const internal = url.startsWith("/");
+            if (internal) {
+              return (
+                <Link href={url} className={linkClass} {...props}>
+                  {children}
+                </Link>
+              );
+            }
+            return (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={linkClass}
+                {...props}
+              >
+                {children}
+              </a>
+            );
+          },
+          // Render tables as stacked key:value pairs so they don't blow out the chat width.
+          // (We also tell the model not to use tables, but this is a safety net.)
+          table({ children }) {
+            return (
+              <div className="my-1 rounded-[8px] border border-rule p-2 text-xs">
+                {children}
+              </div>
+            );
+          },
+          thead() {
+            return null;
+          },
+          tbody({ children }) {
+            return <div className="space-y-1">{children}</div>;
+          },
+          tr({ children }) {
+            return <div className="flex flex-wrap gap-x-2">{children}</div>;
+          },
+          td({ children }) {
+            return <span className="text-ink-soft">{children}</span>;
+          },
+          th({ children }) {
+            return (
+              <span className="font-semibold text-ink">{children}</span>
+            );
+          },
+          // Code: keep tiny inline, never block-render in the chat.
+          code({ children }) {
+            return (
+              <code className="rounded bg-rule/60 px-1 py-0.5 font-mono text-[12px] text-ink">
+                {children}
+              </code>
+            );
+          },
+          pre({ children }) {
+            return <div className="text-[13px]">{children}</div>;
+          },
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }

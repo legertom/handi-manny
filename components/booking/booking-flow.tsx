@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Input, Textarea } from "@/components/ui/input";
 import { IntakeStep } from "./intake-step";
 import { ServiceRibbon } from "./service-ribbon";
+import { BookingSummary } from "./booking-summary";
 import { PhotoGallery } from "@/components/photo-gallery";
 import { cn, formatPriceFromDollars } from "@/lib/utils";
 import {
@@ -135,20 +136,11 @@ export function BookingFlow({
     }
   }
 
-  return (
-    <div>
-      <Stepper step={step} />
-
-      {/* Always-visible context after step 1. */}
-      {step > 0 && service && breakdown && (
-        <ServiceRibbon
-          service={service}
-          breakdown={breakdown}
-          onChange={() => go(0)}
-        />
-      )}
-
-      {step === 0 && (
+  // Service step has no sidebar (no service picked yet).
+  if (step === 0) {
+    return (
+      <div>
+        <Stepper step={step} />
         <ServiceStep
           services={services}
           selectedId={form.serviceId}
@@ -164,67 +156,102 @@ export function BookingFlow({
             go(1);
           }}
         />
-      )}
+      </div>
+    );
+  }
 
-      {step === 1 && service && (
-        <IntakeStep
-          service={service}
-          answers={form.intakeAnswers}
-          onAnswers={(intakeAnswers) =>
-            setForm((f) => ({ ...f, intakeAnswers, slot: null /* duration may change */ }))
-          }
-          selectedAddonIds={form.selectedAddonIds}
-          onAddons={(selectedAddonIds) =>
-            setForm((f) => ({ ...f, selectedAddonIds, slot: null }))
-          }
-          taskDetails={form.taskDetails}
-          onDetails={(taskDetails) => setForm((f) => ({ ...f, taskDetails }))}
-          photos={form.photos}
-          onPhotos={(photos) => setForm((f) => ({ ...f, photos }))}
-          onBack={() => go(0)}
-          onContinue={() => go(2)}
-        />
-      )}
+  // Steps 1–5: 2-col layout with sticky cart sidebar on lg+.
+  return (
+    <div>
+      <Stepper step={step} />
 
-      {step === 2 && service && breakdown && (
-        <SlotStep
-          service={service}
-          totalMinutes={breakdown.totalMinutes}
-          selectedSlot={form.slot}
-          onSelect={(slot) => setForm((f) => ({ ...f, slot }))}
-          onBack={() => go(1)}
-          onContinue={() => go(3)}
-        />
-      )}
+      {service && breakdown && (
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-10">
+          {/* Main column */}
+          <div className="min-w-0">
+            {/* Mobile-only compact ribbon (no sidebar room on small screens). */}
+            <div className="lg:hidden">
+              <ServiceRibbon
+                service={service}
+                breakdown={breakdown}
+                onChange={() => go(0)}
+              />
+            </div>
 
-      {step === 3 && service && form.slot && (
-        <DetailsStep
-          form={form}
-          setForm={setForm}
-          onBack={() => go(2)}
-          onContinue={() => go(4)}
-        />
-      )}
+            {step === 1 && (
+              <IntakeStep
+                service={service}
+                answers={form.intakeAnswers}
+                onAnswers={(intakeAnswers) =>
+                  setForm((f) => ({ ...f, intakeAnswers, slot: null }))
+                }
+                selectedAddonIds={form.selectedAddonIds}
+                onAddons={(selectedAddonIds) =>
+                  setForm((f) => ({ ...f, selectedAddonIds, slot: null }))
+                }
+                taskDetails={form.taskDetails}
+                onDetails={(taskDetails) => setForm((f) => ({ ...f, taskDetails }))}
+                photos={form.photos}
+                onPhotos={(photos) => setForm((f) => ({ ...f, photos }))}
+                onBack={() => go(0)}
+                onContinue={() => go(2)}
+              />
+            )}
 
-      {step === 4 && service && form.slot && breakdown && (
-        <ReviewStep
-          service={service}
-          form={form}
-          breakdown={breakdown}
-          onBack={() => go(3)}
-          onContinue={() => go(5)}
-        />
-      )}
+            {step === 2 && (
+              <SlotStep
+                service={service}
+                totalMinutes={breakdown.totalMinutes}
+                selectedSlot={form.slot}
+                onSelect={(slot) => setForm((f) => ({ ...f, slot }))}
+                onBack={() => go(1)}
+                onContinue={() => go(3)}
+              />
+            )}
 
-      {step === 5 && service && form.slot && breakdown && (
-        <PaymentStep
-          service={service}
-          form={form}
-          breakdown={breakdown}
-          submitting={submitting}
-          onBack={() => go(4)}
-          onSubmit={submit}
-        />
+            {step === 3 && form.slot && (
+              <DetailsStep
+                form={form}
+                setForm={setForm}
+                onBack={() => go(2)}
+                onContinue={() => go(4)}
+              />
+            )}
+
+            {step === 4 && form.slot && (
+              <ReviewStep
+                service={service}
+                form={form}
+                breakdown={breakdown}
+                onBack={() => go(3)}
+                onContinue={() => go(5)}
+              />
+            )}
+
+            {step === 5 && form.slot && (
+              <PaymentStep
+                service={service}
+                form={form}
+                breakdown={breakdown}
+                submitting={submitting}
+                onBack={() => go(4)}
+                onSubmit={submit}
+              />
+            )}
+          </div>
+
+          {/* Desktop sticky cart */}
+          <aside className="hidden lg:block">
+            <BookingSummary
+              service={service}
+              breakdown={breakdown}
+              slot={form.slot}
+              address={form.address}
+              onChangeService={() => go(0)}
+              className="sticky top-24"
+            />
+          </aside>
+        </div>
       )}
     </div>
   );
@@ -806,22 +833,24 @@ function ReviewStep({
           <Row k="Estimated duration" v={`${breakdown.totalMinutes} min`} />
         </ReviewBlock>
 
-        <ReviewBlock title="Price breakdown" icon={CheckCircle2}>
-          <Row k={service.name} v={formatPriceFromDollars(breakdown.baseDollars)} />
-          {breakdown.items.map((item, i) => (
-            <Row
-              key={i}
-              k={item.label}
-              v={`+${formatPriceFromDollars(item.dollars)}`}
-            />
-          ))}
-          <div className="grid grid-cols-[140px_1fr] gap-4 border-t border-rule px-5 py-3 text-sm">
-            <dt className="font-semibold text-ink">Total</dt>
-            <dd className="font-display text-lg font-semibold text-ink">
-              {formatPriceFromDollars(breakdown.totalDollars)}
-            </dd>
-          </div>
-        </ReviewBlock>
+        <div className="lg:hidden">
+          <ReviewBlock title="Price breakdown" icon={CheckCircle2}>
+            <Row k={service.name} v={formatPriceFromDollars(breakdown.baseDollars)} />
+            {breakdown.items.map((item, i) => (
+              <Row
+                key={i}
+                k={item.label}
+                v={`+${formatPriceFromDollars(item.dollars)}`}
+              />
+            ))}
+            <div className="grid grid-cols-[140px_1fr] gap-4 border-t border-rule px-5 py-3 text-sm">
+              <dt className="font-semibold text-ink">Total</dt>
+              <dd className="font-display text-lg font-semibold text-ink">
+                {formatPriceFromDollars(breakdown.totalDollars)}
+              </dd>
+            </div>
+          </ReviewBlock>
+        </div>
 
         <ReviewBlock title="You" icon={Mail}>
           <Row k="Name" v={form.customer.name} />

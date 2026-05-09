@@ -14,7 +14,7 @@ export default async function BookPage({
 }) {
   const { service: initialServiceId } = await searchParams;
   return (
-    <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
+    <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
       <BookingFlow services={SERVICES} initialServiceId={initialServiceId} />
     </div>
   );
