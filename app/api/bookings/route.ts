@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { z } from "zod";
+import { generateText, Output } from "ai";
 import { createBooking } from "@/lib/store";
 import { getServiceById } from "@/lib/services";
 import { authorizeCard } from "@/lib/stripe";
@@ -113,11 +115,47 @@ export async function POST(request: Request) {
     amountDollars: breakdown.totalDollars,
   });
 
-  // Best-effort notifications — don't fail the booking on a stub log.
-  await Promise.allSettled([
-    notifyCustomer(booking, "booking_received"),
-    notifyManny(booking, "manny_new_booking"),
-  ]);
+  // after() runs AFTER the response is sent — the customer sees instant confirmation
+  // while AI generates a personalized message and notifications fire in the background.
+  // On Vercel, Fluid Compute keeps the function instance alive for this work.
+  after(async () => {
+    const confirmationSchema = z.object({
+      subject: z.string().describe("Email subject line"),
+      body: z.string().describe("Friendly confirmation message, 2-3 short paragraphs"),
+      mannyHeadsUp: z.string().describe("One-line SMS-length heads-up for Manny"),
+    });
+
+    try {
+      const { output: message } = await generateText({
+        model: "anthropic/claude-sonnet-4.6",
+        output: Output.object({ schema: confirmationSchema }),
+        prompt: `Generate a booking confirmation for:
+- Customer: ${booking.customer.name}
+- Service: ${booking.serviceName} ($${booking.priceDollars})
+- When: ${booking.scheduledStart}
+- Where: ${booking.address.borough}, NY
+- Details: ${booking.taskDetails ?? "none"}
+
+For the customer email: be warm, include what to have ready, mention free cancellation 24hr+ out.
+For Manny's SMS: keep it under 160 chars, include customer first name, service, date, and borough.`,
+      });
+
+      if (message) {
+        console.log(`[after] AI confirmation for booking ${booking.id}:`, {
+          subject: message.subject,
+          bodyLength: message.body.length,
+          mannySms: message.mannyHeadsUp,
+        });
+      }
+    } catch (err) {
+      console.error(`[after] AI confirmation generation failed:`, err);
+    }
+
+    await Promise.allSettled([
+      notifyCustomer(booking, "booking_received"),
+      notifyManny(booking, "manny_new_booking"),
+    ]);
+  });
 
   return NextResponse.json(
     {

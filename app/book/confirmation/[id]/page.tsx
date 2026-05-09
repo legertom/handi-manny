@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -9,20 +10,38 @@ import { Button } from "@/components/ui/button";
 import { PhotoGallery } from "@/components/photo-gallery";
 import { summarizeIntake } from "@/lib/intake";
 import { formatPriceFromDollars } from "@/lib/utils";
-import { CheckCircle2, Clock, MapPin, CalendarDays, ArrowRight } from "lucide-react";
-
-export const dynamic = "force-dynamic";
+import { connection } from "next/server";
+import { CheckCircle2, Clock, MapPin, CalendarDays, ArrowRight, Loader2 } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Booking received",
   robots: { index: false },
 };
 
-export default async function ConfirmationPage({
+export default function ConfirmationPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Loader2 className="size-6 animate-spin text-muted" />
+        </div>
+      }
+    >
+      <ConfirmationContent params={params} />
+    </Suspense>
+  );
+}
+
+async function ConfirmationContent({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  await connection();
   const { id } = await params;
   const booking = getBooking(id);
   if (!booking) notFound();

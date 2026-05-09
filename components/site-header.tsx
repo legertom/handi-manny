@@ -5,9 +5,9 @@ import { Phone } from "lucide-react";
 
 const NAV = [
   { href: "/services", label: "Services" },
+  { href: "/estimate", label: "Instant estimate" },
   { href: "/#how-it-works", label: "How it works" },
   { href: "/#reviews", label: "Reviews" },
-  { href: "/#faq", label: "FAQ" },
 ];
 
 export function SiteHeader() {
