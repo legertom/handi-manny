@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -5,6 +6,7 @@ import { getBooking } from "@/lib/store";
 import { getServiceById } from "@/lib/services";
 import { MannyBookingActions } from "@/components/manny/booking-actions";
 import { ClientCopy } from "@/components/manny/client-copy";
+import { AIBriefing } from "@/components/manny/ai-briefing";
 import { PhotoGallery } from "@/components/photo-gallery";
 import { Badge } from "@/components/ui/badge";
 import { fullAddress, mapsUrl, smsUrl, telUrl } from "@/lib/links";
@@ -22,24 +24,40 @@ import {
   Image as ImageIcon,
   ListChecks,
   Package,
+  Loader2,
 } from "lucide-react";
+import { connection } from "next/server";
 import type { Booking } from "@/lib/store";
-
-export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Job details",
   robots: { index: false },
 };
 
-// TODO: gate this page behind auth before launch. Today the URL is shareable by ID;
-// production should require a signed token query param OR a logged-in Manny session.
-
-export default async function MannyBookingPage({
+export default function MannyBookingPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Loader2 className="size-6 animate-spin text-muted" />
+        </div>
+      }
+    >
+      <MannyBookingContent params={params} />
+    </Suspense>
+  );
+}
+
+async function MannyBookingContent({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  await connection();
   const { id } = await params;
   const booking = getBooking(id);
   if (!booking) notFound();
@@ -143,6 +161,9 @@ export default async function MannyBookingPage({
 
       {/* Job details from intake — surfaced prominently for prep */}
       <JobIntakeSection booking={booking} />
+
+      {/* AI-generated briefing */}
+      <AIBriefing booking={booking} />
 
       {/* Photos */}
       {booking.photos.length > 0 && (

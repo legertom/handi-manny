@@ -13,13 +13,15 @@ import {
   Wrench,
   Loader2,
   ShieldCheck,
+  CalendarCheck,
+  Camera,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatUIMessage } from "@/lib/chat-agent";
 
 const SUGGESTIONS = [
   "Mount a 65\" TV on a brick wall",
-  "Install my window AC",
+  "Install my window AC — book me in",
   "Build a PAX wardrobe",
   "I have a punch list — quote it",
 ];
@@ -241,15 +243,22 @@ function ThinkingIndicator() {
 
 /* ---------------- Tool pill ---------------- */
 
-function ToolPart({ part }: { part: { type: string; state?: string } }) {
+function ToolPart({ part }: { part: { type: string; state?: string; output?: unknown } }) {
   const labelMap: Record<string, string> = {
     "tool-listServices": "Checking the price book…",
     "tool-getServiceDetails": "Pulling service details…",
     "tool-getAvailability": "Checking Manny's calendar…",
     "tool-refuseSpecialistJob": "Flagging as specialist work…",
+    "tool-createBooking": "Creating your booking…",
+    "tool-analyzePhoto": "Analyzing your photo…",
   };
   const label = labelMap[part.type] ?? "Working…";
-  const done = part.state === "output-available" || part.state === "result";
+  const done = part.state === "output-available";
+
+  const output = part.output as Record<string, unknown> | undefined;
+  if (done && part.type === "tool-createBooking" && output?.success) {
+    return <BookingConfirmationCard result={output} />;
+  }
 
   return (
     <div className="my-1.5 inline-flex items-center gap-2 rounded-full border border-rule bg-paper px-2.5 py-1 text-[11px] text-muted">
@@ -259,6 +268,38 @@ function ToolPart({ part }: { part: { type: string; state?: string } }) {
         <Loader2 className="size-3 animate-spin text-brand" />
       )}
       <span>{label}</span>
+    </div>
+  );
+}
+
+function BookingConfirmationCard({ result }: { result: Record<string, unknown> }) {
+  const start = result.scheduledStart as string;
+  const when = start
+    ? new Date(start).toLocaleString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "";
+
+  return (
+    <div className="my-2 rounded-[12px] border border-trust/30 bg-trust/5 p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-trust">
+        <CalendarCheck className="size-4" />
+        Booking confirmed
+      </div>
+      <div className="mt-1.5 space-y-0.5 text-xs text-ink-soft">
+        <p>{result.serviceName as string} — ${result.priceDollars as number}</p>
+        {when && <p>{when}</p>}
+      </div>
+      <Link
+        href={`/book/confirmation/${result.bookingId as string}`}
+        className="mt-2 inline-flex items-center gap-1 rounded-[8px] bg-trust px-3 py-1.5 text-xs font-semibold text-paper hover:bg-trust/90"
+      >
+        View booking
+      </Link>
     </div>
   );
 }

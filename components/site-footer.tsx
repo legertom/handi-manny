@@ -37,7 +37,7 @@ export function SiteFooter() {
           </div>
         </div>
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-rule pt-6 text-xs text-muted-soft sm:flex-row sm:items-center">
-          <span>© {new Date().getFullYear()} Handi-Manny. All rights reserved.</span>
+          <span>© 2026 Handi-Manny. All rights reserved.</span>
           <span>Built in Brooklyn. Same-day booking available.</span>
         </div>
       </div>
