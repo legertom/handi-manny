@@ -1,26 +1,81 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Backgrounds + neutrals */
+  --color-background: #f6f8fc;       /* light cool wash */
+  --color-paper: #ffffff;
+  --color-rule: #e3e8f0;
+  --color-rule-strong: #c8d1e0;
+
+  /* Ink (navy from the logo) */
+  --color-ink: #1e2d5e;
+  --color-ink-soft: #2c3d72;
+  --color-ink-deep: #131e44;
+  --color-foreground: #1e2d5e;
+  --color-muted: #5b6790;
+  --color-muted-soft: #8e98b8;
+
+  /* Brand (orange from the logo) */
+  --color-brand: #ea6a1f;
+  --color-brand-hover: #d05813;
+  --color-brand-soft: #ffe7d3;
+  --color-brand-ink: #6b2e0f;
+
+  /* Semantic */
+  --color-trust: #16a34a;
+  --color-trust-soft: #dcfce7;
+  --color-warning: #c2410c;
+  --color-warning-soft: #fef0e6;
+
+  /* Sky tint for friendly accents */
+  --color-sky: #eaf1ff;
+  --color-sky-strong: #c9d8f4;
+
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+
+  --radius-card: 16px;
+  --radius-button: 12px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+  }
+  ::selection {
+    background: #ffe7d3;
+    color: #6b2e0f;
+  }
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+  .focus-ring {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .focus-ring:focus-visible {
+    outline-color: var(--color-brand);
+  }
+  /* Soft sky band — subtle background variation for sections */
+  .sky-band {
+    background: linear-gradient(180deg, #eaf1ff 0%, #f6f8fc 100%);
+  }
+  /* Bright cheerful gradient for CTAs/hero accents */
+  .brand-band {
+    background: linear-gradient(180deg, #fff5ec 0%, #f6f8fc 100%);
+  }
 }
